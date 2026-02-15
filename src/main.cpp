@@ -1,4 +1,5 @@
 #include "arena.h"
+#include "pool.h"
 #include <stdio.h>
 
 int main(void)
