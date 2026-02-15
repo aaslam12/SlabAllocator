@@ -11,9 +11,18 @@
 
 namespace AL
 {
+pool::pool()
+{
+    free_count = -1;
+    block_size = -1;
+    block_count = -1;
+    capacity = -1;
+    free_list = nullptr;
+    memory = nullptr;
+}
+
 pool::pool(size_t block_size, size_t block_count) : free_count(0), block_count(block_count)
 {
-
     int page_size = getpagesize();
     if (block_size < sizeof(void*))
     {
@@ -83,6 +92,8 @@ void* pool::alloc()
     if (free_list == nullptr)
         return nullptr; // pool is full/uninitialized
 
+    check_asserts();
+
     auto temp = free_list;
     free_list = free_list->next;
     free_count--;
@@ -92,6 +103,8 @@ void* pool::alloc()
 
 void* pool::calloc()
 {
+    check_asserts();
+
     void* ptr = alloc();
 
     if (ptr != nullptr)
@@ -104,6 +117,7 @@ void* pool::calloc()
 
 void pool::reset()
 {
+    check_asserts();
     init_free_list();
     free_count = block_count;
 }
@@ -127,6 +141,8 @@ void pool::free(void* ptr)
     if (ptr == nullptr)
         return;
 
+    check_asserts();
+
     assert(owns(ptr) && "Pointer does not belong to this pool");
 
     free_node* node = static_cast<free_node*>(ptr);
@@ -138,11 +154,23 @@ void pool::free(void* ptr)
 
 size_t pool::get_free_space() const
 {
+    check_asserts();
     return free_count * block_size;
 }
 
 size_t pool::get_capacity() const
 {
+    check_asserts();
     return capacity;
 }
+
+void pool::check_asserts() const
+{
+    assert(memory != nullptr && "Memory is nullptr. pool likely not initialized correctly.");
+    assert(capacity != (size_t)-1 && "Capacity is invalid. pool likely not initialized correctly.");
+    assert(free_count != (size_t)-1 && "Free count is invalid. pool likely not initialized correctly.");
+    assert(block_size != (size_t)-1 && "Block size is invalid. pool likely not initialized correctly.");
+    assert(block_count != (size_t)-1 && "Block count is invalid. pool likely not initialized correctly.");
+}
+
 } // namespace AL

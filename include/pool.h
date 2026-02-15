@@ -12,6 +12,7 @@ class pool
     };
 
 public:
+    pool();
     pool(size_t block_size, size_t block_count);
     ~pool();
 
@@ -49,5 +50,7 @@ private:
 
     bool owns(void* ptr) const;
     void init_free_list();
+
+    void check_asserts() const;
 };
 } // namespace AL
