@@ -17,7 +17,7 @@ arena::arena(size_t bytes) : memory(nullptr), used(0), capacity(0)
     // round up to next page boundary
     capacity = ((bytes + page_size - 1) / page_size) * page_size;
 
-    void* ptr = mmap(NULL, capacity, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    void* ptr = mmap(nullptr, capacity, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 
     if (ptr == MAP_FAILED)
     {
@@ -35,13 +35,36 @@ arena::~arena()
 
     int result = munmap(memory, capacity);
 
-#if SLABALLOCATOR_DEBUG
+#if PALLOC_DEBUG
     // something went wrong.
     if (result == -1)
     {
         std::cerr << "WARNING: munmap failed in arena destructor\n";
     }
-#endif // SLABALLOCATOR_DEBUG
+#endif // PALLOC_DEBUG
+}
+
+arena::arena(arena&& other) noexcept : memory(other.memory), used(other.used.load()), capacity(other.capacity)
+{
+    other.clear();
+}
+
+arena& arena::operator=(arena&& other) noexcept
+{
+    if (this == &other)
+        return *this;
+
+    if (memory != nullptr)
+    {
+        munmap(memory, capacity);
+    }
+
+    memory = other.memory;
+    used = other.used.load();
+    capacity = other.capacity;
+
+    other.clear();
+    return *this;
 }
 
 void* arena::alloc(size_t length)
@@ -55,17 +78,12 @@ void* arena::alloc(size_t length)
         current = used.load(std::memory_order_acquire);
 
         // if we do not have enough space left in the page
-        if (length > (capacity - used))
+        if (length > (capacity - current))
             return nullptr;
 
         if (used.compare_exchange_strong(current, current + length, std::memory_order_release, std::memory_order_acquire))
             return memory + current;
     }
-
-    std::byte* result = memory + used;
-    used += length;
-
-    return result;
 }
 
 void* arena::calloc(size_t length)
@@ -83,6 +101,22 @@ void* arena::calloc(size_t length)
 int arena::reset()
 {
     used = 0;
+    return 0;
+}
+
+int arena::clear()
+{
+    if (memory != nullptr)
+    {
+        int result = munmap(memory, capacity);
+        memory = nullptr;
+
+        if (result != 0)
+            return result;
+    }
+
+    used.store(0);
+    capacity = 0;
     return 0;
 }
 

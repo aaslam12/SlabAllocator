@@ -15,12 +15,18 @@ public:
     slab(double scale = 1.0);
     ~slab();
 
-    // returns: nullptr if failed, else the memory address of the block of memory
-    void* alloc(size_t size);
+    slab(const slab&) = delete;
+    slab& operator=(const slab&) = delete;
+    slab(slab&&) noexcept = default;
+    slab& operator=(slab&&) noexcept = default;
 
     // returns: nullptr if failed, else the memory address of the block of memory
-    void* calloc(size_t size);
+    [[nodiscard]] void* alloc(size_t size);
 
+    // returns: nullptr if failed, else the memory address of the block of memory
+    [[nodiscard]] void* calloc(size_t size);
+
+    // NOT thread safe
     // returns: -1 if failed
     void reset();
 

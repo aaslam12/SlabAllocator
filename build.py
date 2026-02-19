@@ -8,9 +8,7 @@ import sys
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Build, test, and run the SLABALLOCATOR."
-    )
+    parser = argparse.ArgumentParser(description="Build, test, and run the PALLOC.")
     parser.add_argument(
         "--config",
         default="Debug",
@@ -38,15 +36,34 @@ def main():
     parser.add_argument(
         "--static", action="store_true", help="Link libraries statically"
     )
+    sanitizer_group = parser.add_mutually_exclusive_group()
+    sanitizer_group.add_argument(
+        "--asan",
+        action="store_true",
+        help="Enable AddressSanitizer + UndefinedBehaviorSanitizer (Debug only). "
+        "Detects memory errors: use-after-free, buffer overflows, leaks.",
+    )
+    sanitizer_group.add_argument(
+        "--tsan",
+        action="store_true",
+        help="Enable ThreadSanitizer (Debug only). "
+        "Detects data races and concurrency bugs.",
+    )
 
     args = parser.parse_args()
 
+    if (args.asan or args.tsan) and args.config != "Debug":
+        print("Error: --asan and --tsan require --config Debug.")
+        sys.exit(1)
+
+    sanitizer_suffix = "-asan" if args.asan else "-tsan" if args.tsan else ""
+
     # --- Path Setup ---
     project_root = os.path.dirname(os.path.abspath(__file__))
-    build_dir = os.path.join(project_root, "build", args.config)
+    build_dir = os.path.join(project_root, "build", args.config + sanitizer_suffix)
 
     # Executable name handling for Windows
-    executable_name = "slaballocator"
+    executable_name = "palloc"
     if platform.system() == "Windows":
         executable_name += ".exe"
     executable_path = os.path.join(build_dir, executable_name)
@@ -72,10 +89,21 @@ def main():
     cmake_args = [
         f"-DCMAKE_BUILD_TYPE={args.config}",
         "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
-        f"-DSLABALLOCATOR_BUILD_TESTS={'ON' if build_tests else 'OFF'}",
-        f"-DSLABALLOCATOR_BUILD_STRESS_TESTS={'ON' if args.stress_test else 'OFF'}",
-        f"-DSLABALLOCATOR_STATIC_LINKING={'ON' if args.static else 'OFF'}",
+        f"-DPALLOC_BUILD_TESTS={'ON' if build_tests else 'OFF'}",
+        f"-DPALLOC_BUILD_STRESS_TESTS={'ON' if args.stress_test else 'OFF'}",
+        f"-DPALLOC_STATIC_LINKING={'ON' if args.static else 'OFF'}",
     ]
+
+    if args.asan:
+        cmake_args += [
+            "-DCMAKE_CXX_FLAGS=-fsanitize=address,undefined -fno-omit-frame-pointer",
+            "-DCMAKE_EXE_LINKER_FLAGS=-fsanitize=address,undefined",
+        ]
+    elif args.tsan:
+        cmake_args += [
+            "-DCMAKE_CXX_FLAGS=-fsanitize=thread -fno-omit-frame-pointer",
+            "-DCMAKE_EXE_LINKER_FLAGS=-fsanitize=thread",
+        ]
 
     # Generator selection: Prefer Ninja if available, else let CMake decide
     cmd_config = ["cmake", "-S", project_root, "-B", build_dir]
@@ -122,15 +150,26 @@ def main():
             env = os.environ.copy()
             env["CTEST_COLOR_OUTPUT"] = "ON"
             env["CLICOLOR_FORCE"] = "1"
+            if args.tsan:
+                env.setdefault("TSAN_OPTIONS", "suppress_equal_stacks=1")
+            if args.asan:
+                env.setdefault("ASAN_OPTIONS", "halt_on_error=0:detect_leaks=1")
 
             # ctest handles running the registered tests
             subprocess.check_call(
                 ["ctest", "--output-on-failure", "--test-dir", build_dir], env=env
             )
+
+            # Under TSan, also explicitly run the hidden [thread] test suite.
+            if args.tsan:
+                tests_exe = os.path.join(build_dir, "tests")
+                if platform.system() == "Windows":
+                    tests_exe += ".exe"
+                if os.path.exists(tests_exe):
+                    print("\n=== Running thread-safety tests under TSan ([thread]) ===")
+                    subprocess.check_call([tests_exe, "[thread]"], env=env)
         except subprocess.CalledProcessError:
             print("Tests failed.")
-            # We don't exit here to allow running the app if desired,
-            # mirroring the '|| true' behavior of the original script.
 
     # --- Stress Test Step ---
     if args.stress_test:

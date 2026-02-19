@@ -1,6 +1,8 @@
 #pragma once
 
+#include <atomic>
 #include <cstddef>
+#include <mutex>
 
 namespace AL
 {
@@ -18,26 +20,33 @@ public:
 
     pool(const pool&) = delete;
     pool& operator=(const pool&) = delete;
+    pool(pool&&) noexcept;
+    pool& operator=(pool&&) noexcept;
 
     void init(size_t block_size, size_t block_count);
 
     // allocates a block of memory from the pool
+    // thread-safe
     // returns: nullptr if failed, else the memory address of the block of memory
-    void* alloc();
+    [[nodiscard]] void* alloc();
 
     // allocates a block of memory from the pool
     // also zeroes out the memory returned
+    // thread-safe
     // returns: nullptr if failed, else the memory address of the block of memory
-    void* calloc();
+    [[nodiscard]] void* calloc();
 
     // frees the entire pool but keeps it alive to reuse
+    // thread-safe
     // returns: -1 if failed
     void reset();
 
     // frees the block
+    // thread-safe
     // returns: -1 if failed
     void free(void* ptr);
 
+    // already thread safe
     // returns get number of free bytes
     size_t get_free_space() const;
 
@@ -46,15 +55,17 @@ public:
 
     size_t get_block_size() const;
     size_t get_block_count() const;
+    void clear();
 
 private:
-    std::byte* memory;
+    std::byte* memory; // pointer to the first byte of our mapped memory
     size_t capacity;
-    size_t free_count;
+    std::atomic<size_t> free_count;
 
     size_t block_size;
     size_t block_count;
     free_node* free_list;
+    mutable std::mutex alloc_free_mutex;
 
     bool owns(void* ptr) const;
     void init_free_list();

@@ -9,21 +9,29 @@ class arena
 {
 public:
     arena(size_t bytes);
-
     ~arena();
+    arena(const arena&) = delete;
+    arena& operator=(const arena&) = delete;
+    arena(arena&&) noexcept;
+    arena& operator=(arena&&) noexcept;
 
     // allocates a block of memory of specified length from the arena
     // returns: nullptr if failed, else the memory address of the block of memory
-    void* alloc(size_t length);
+    [[nodiscard]] void* alloc(size_t length);
 
     // allocates a block of memory of specified length from the arena
     // also zeroes out the memory returned
     // returns: nullptr if failed, else the memory address of the block of memory
-    void* calloc(size_t length);
+    [[nodiscard]] void* calloc(size_t length);
 
     // frees the entire arena but keeps it alive to reuse
+    // NOT thread safe
     // returns: -1 if failed
     int reset();
+
+    // unmaps all memory
+    // returns: -1 if failed
+    int clear();
 
     // gets the amount of bytes used by the arena
     size_t get_used() const;
@@ -33,7 +41,7 @@ public:
 
 private:
     std::byte* memory;
-    std::atomic<size_t> used; // could be accessed by multiple threads
+    std::atomic<size_t> used;
     size_t capacity;
 };
 } // namespace AL

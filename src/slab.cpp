@@ -43,6 +43,7 @@ void* slab::calloc(size_t size)
 
     if (ptr != nullptr)
     {
+        // should instead refactor to call pool calloc()
         size_t actual_size = SIZE_CLASS_CONFIG[size_to_index(size)].first;
         std::memset(ptr, 0, actual_size); // zeroes out the entire block, just need the number of bytes, the user requested
     }
