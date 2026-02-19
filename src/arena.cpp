@@ -1,4 +1,5 @@
 #include "arena.h"
+#include <atomic>
 #include <cassert>
 #include <cstddef>
 #include <cstring>
@@ -48,9 +49,18 @@ void* arena::alloc(size_t length)
     if (length == 0 || memory == nullptr)
         return nullptr;
 
-    // if we do not have enough space left in the page
-    if (length > (capacity - used))
-        return nullptr;
+    size_t current;
+    while (true)
+    {
+        current = used.load(std::memory_order_acquire);
+
+        // if we do not have enough space left in the page
+        if (length > (capacity - used))
+            return nullptr;
+
+        if (used.compare_exchange_strong(current, current + length, std::memory_order_release, std::memory_order_acquire))
+            return memory + current;
+    }
 
     std::byte* result = memory + used;
     used += length;

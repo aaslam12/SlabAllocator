@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <cstddef>
 
 namespace AL
@@ -32,7 +33,7 @@ public:
 
 private:
     std::byte* memory;
-    size_t used;
+    std::atomic<size_t> used; // could be accessed by multiple threads
     size_t capacity;
 };
 } // namespace AL
