@@ -2,11 +2,47 @@
 
 #include "pool.h"
 #include <array>
+#include <cassert>
 #include <cstddef>
 #include <iterator>
 #include <utility>
 namespace AL
 {
+struct thread_local_cache
+{
+    // configurable value to control cache object count in bytes
+    static constexpr size_t object_count = 128;
+
+    std::array<void*, object_count> objects;
+    size_t current = 0;
+
+    [[nodiscard]] void* try_pop()
+    {
+        if (is_empty())
+            return nullptr;
+
+        current--;
+        return objects[current];
+    }
+
+    void push(void* ptr)
+    {
+        assert(!is_full() && "Thread local cache is full");
+
+        objects[current] = ptr;
+        current++;
+    }
+
+    bool is_empty() const
+    {
+        return current == 0;
+    }
+
+    bool is_full() const
+    {
+        return current == object_count;
+    }
+};
 
 class slab
 {
@@ -76,6 +112,11 @@ private:
         return SIZE_CLASS_CONFIG[index].second;
     }
 
-    std::array<pool, NUM_SIZE_CLASSES> pools;
+    thread_local static thread_local_cache cache_8B;
+    thread_local static thread_local_cache cache_16B;
+    thread_local static thread_local_cache cache_32B;
+    thread_local static thread_local_cache cache_64B;
+
+    std::array<pool, NUM_SIZE_CLASSES> shared_pools;
 };
 } // namespace AL
