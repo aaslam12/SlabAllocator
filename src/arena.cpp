@@ -46,7 +46,10 @@ arena::~arena()
 
 arena::arena(arena&& other) noexcept : memory(other.memory), used(other.used.load()), capacity(other.capacity)
 {
-    other.clear();
+    other.reset();
+    other.capacity = 0;
+    other.used = 0;
+    other.memory = nullptr;
 }
 
 arena& arena::operator=(arena&& other) noexcept
@@ -63,7 +66,10 @@ arena& arena::operator=(arena&& other) noexcept
     used = other.used.load();
     capacity = other.capacity;
 
-    other.clear();
+    other.reset();
+    other.capacity = 0;
+    other.used = 0;
+    other.memory = nullptr;
     return *this;
 }
 

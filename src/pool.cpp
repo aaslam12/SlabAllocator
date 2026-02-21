@@ -143,8 +143,6 @@ void* pool::alloc()
 
 void* pool::calloc()
 {
-    check_asserts();
-
     void* ptr = alloc();
 
     if (ptr != nullptr)
