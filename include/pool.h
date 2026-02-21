@@ -6,6 +6,8 @@
 
 namespace AL
 {
+class slab;
+
 class pool
 {
     struct free_node
@@ -14,6 +16,8 @@ class pool
     };
 
 public:
+    friend class slab;
+
     pool();
     pool(size_t block_size, size_t block_count);
     ~pool();
@@ -71,5 +75,8 @@ private:
     void init_free_list();
 
     void check_asserts() const;
+
+    size_t alloc_batched_internal(size_t num_objects, void* out[]);
+    void free_batched_internal(size_t num_objects, void* in[]);
 };
 } // namespace AL

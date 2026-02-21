@@ -141,6 +141,29 @@ void* pool::alloc()
     return temp;
 }
 
+size_t pool::alloc_batched_internal(size_t num_objects, void* out[])
+{
+    std::lock_guard<std::mutex> lock(alloc_free_mutex);
+    if (!out || !free_list)
+        return 0;
+
+    check_asserts();
+
+    size_t i = 0;
+    for (; i < num_objects; i++)
+    {
+        if (free_list == nullptr)
+            return i;
+
+        free_node* temp = free_list;
+        free_list = free_list->next;
+        free_count--;
+        out[i] = temp;
+    }
+
+    return i;
+}
+
 void* pool::calloc()
 {
     void* ptr = alloc();
@@ -202,6 +225,31 @@ void pool::free(void* ptr)
     free_list = node;
 
     free_count++;
+}
+
+void pool::free_batched_internal(size_t num_objects, void* in[])
+{
+    std::lock_guard<std::mutex> lock(alloc_free_mutex);
+    if (!in)
+        return;
+
+    check_asserts();
+
+    for (size_t i = 0; i < num_objects; i++)
+    {
+        if (!in[i])
+            continue;
+
+        assert(owns(in[i]) && "Pointer does not belong to this pool");
+
+        free_node* node = static_cast<free_node*>(in[i]);
+        node->next = free_list;
+        free_list = node;
+
+        free_count++;
+    }
+
+    return;
 }
 
 size_t pool::get_free_space() const
