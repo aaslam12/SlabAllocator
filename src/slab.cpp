@@ -24,7 +24,16 @@ slab::slab(double scale) : epoch(0)
 }
 
 slab::~slab()
-{}
+{
+    for (auto& entry : caches)
+    {
+        if (entry.owner == this)
+        {
+            entry.invalidate_all();
+            entry.owner = nullptr;
+        }
+    }
+}
 
 void* slab::alloc(size_t size)
 {

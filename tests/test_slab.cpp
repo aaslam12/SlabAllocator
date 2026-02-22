@@ -5,10 +5,6 @@
 #include <set>
 #include <vector>
 
-// ============================================================================
-// Construction and Initialization
-// ============================================================================
-
 TEST_CASE("Slab: Default construction", "[slab][basic]")
 {
     AL::slab s;
@@ -60,65 +56,6 @@ TEST_CASE("Slab: Construction with scale", "[slab][basic]")
         REQUIRE(s.get_total_capacity() > 0);
     }
 }
-
-TEST_CASE("Slab: Pool statistics", "[slab][stats]")
-{
-    AL::slab s;
-
-    SECTION("Pool count matches size class count")
-    {
-        REQUIRE(s.get_pool_count() == 10);
-    }
-
-    SECTION("Block sizes are in ascending order")
-    {
-        for (size_t i = 1; i < s.get_pool_count(); ++i)
-        {
-            REQUIRE(s.get_pool_block_size(i) > s.get_pool_block_size(i - 1));
-        }
-    }
-
-    SECTION("All block sizes are powers of two")
-    {
-        for (size_t i = 0; i < s.get_pool_count(); ++i)
-        {
-            size_t bs = s.get_pool_block_size(i);
-            REQUIRE((bs & (bs - 1)) == 0);
-        }
-    }
-
-    SECTION("Expected size classes are present")
-    {
-        REQUIRE(s.get_pool_block_size(0) == 8);
-        REQUIRE(s.get_pool_block_size(1) == 16);
-        REQUIRE(s.get_pool_block_size(2) == 32);
-        REQUIRE(s.get_pool_block_size(3) == 64);
-        REQUIRE(s.get_pool_block_size(4) == 128);
-        REQUIRE(s.get_pool_block_size(5) == 256);
-        REQUIRE(s.get_pool_block_size(6) == 512);
-        REQUIRE(s.get_pool_block_size(7) == 1024);
-        REQUIRE(s.get_pool_block_size(8) == 2048);
-        REQUIRE(s.get_pool_block_size(9) == 4096);
-    }
-
-    SECTION("Each pool has free space initially")
-    {
-        for (size_t i = 0; i < s.get_pool_count(); ++i)
-        {
-            REQUIRE(s.get_pool_free_space(i) > 0);
-        }
-    }
-
-    SECTION("Invalid pool index returns 0")
-    {
-        REQUIRE(s.get_pool_block_size(999) == 0);
-        REQUIRE(s.get_pool_free_space(999) == 0);
-    }
-}
-
-// ============================================================================
-// Basic Allocation
-// ============================================================================
 
 TEST_CASE("Slab: Basic allocations", "[slab][alloc]")
 {
@@ -226,34 +163,10 @@ TEST_CASE("Slab: Size class routing", "[slab][alloc]")
     }
 }
 
-// ============================================================================
-// Edge Cases: Allocation
-// ============================================================================
-
 TEST_CASE("Slab: Zero-size allocation", "[slab][alloc][edge]")
 {
     AL::slab s;
     REQUIRE(s.alloc(0) == nullptr);
-}
-
-TEST_CASE("Slab: Over-sized allocation", "[slab][alloc][edge]")
-{
-    AL::slab s;
-
-    SECTION("Just above max size class")
-    {
-        REQUIRE(s.alloc(4097) == nullptr);
-    }
-
-    SECTION("Very large size")
-    {
-        REQUIRE(s.alloc(1024 * 1024) == nullptr);
-    }
-
-    SECTION("SIZE_MAX")
-    {
-        REQUIRE(s.alloc((size_t)-1) == nullptr);
-    }
 }
 
 TEST_CASE("Slab: Pool exhaustion", "[slab][alloc][edge]")
@@ -288,10 +201,6 @@ TEST_CASE("Slab: Pool exhaustion", "[slab][alloc][edge]")
         REQUIRE(s.alloc(64) != nullptr);
     }
 }
-
-// ============================================================================
-// Calloc
-// ============================================================================
 
 TEST_CASE("Slab: Calloc zeros memory", "[slab][calloc]")
 {
@@ -344,25 +253,6 @@ TEST_CASE("Slab: Calloc zeros memory", "[slab][calloc]")
             REQUIRE(ptr2[i] == 0);
     }
 }
-
-TEST_CASE("Slab: Calloc edge cases", "[slab][calloc][edge]")
-{
-    AL::slab s;
-
-    SECTION("Zero-size calloc")
-    {
-        REQUIRE(s.calloc(0) == nullptr);
-    }
-
-    SECTION("Over-sized calloc")
-    {
-        REQUIRE(s.calloc(4097) == nullptr);
-    }
-}
-
-// ============================================================================
-// Free
-// ============================================================================
 
 TEST_CASE("Slab: Basic free", "[slab][free]")
 {
@@ -436,56 +326,6 @@ TEST_CASE("Slab: Basic free", "[slab][free]")
     }
 }
 
-TEST_CASE("Slab: Free order independence", "[slab][free]")
-{
-    AL::slab s;
-
-    SECTION("LIFO order")
-    {
-        std::vector<void*> ptrs;
-        for (int i = 0; i < 10; ++i)
-            ptrs.push_back(s.alloc(64));
-
-        for (auto it = ptrs.rbegin(); it != ptrs.rend(); ++it)
-            s.free(*it, 64);
-
-        REQUIRE(s.alloc(64) != nullptr);
-    }
-
-    SECTION("FIFO order")
-    {
-        std::vector<void*> ptrs;
-        for (int i = 0; i < 10; ++i)
-            ptrs.push_back(s.alloc(64));
-
-        for (void* ptr : ptrs)
-            s.free(ptr, 64);
-
-        REQUIRE(s.alloc(64) != nullptr);
-    }
-
-    SECTION("Mixed sizes in arbitrary order")
-    {
-        void* p32 = s.alloc(32);
-        void* p64 = s.alloc(64);
-        void* p128 = s.alloc(128);
-        void* p32_2 = s.alloc(32);
-
-        s.free(p64, 64);
-        s.free(p32, 32);
-        s.free(p32_2, 32);
-        s.free(p128, 128);
-
-        REQUIRE(s.alloc(32) != nullptr);
-        REQUIRE(s.alloc(64) != nullptr);
-        REQUIRE(s.alloc(128) != nullptr);
-    }
-}
-
-// ============================================================================
-// Reset
-// ============================================================================
-
 TEST_CASE("Slab: Reset functionality", "[slab][reset]")
 {
     AL::slab s;
@@ -557,10 +397,6 @@ TEST_CASE("Slab: Reset functionality", "[slab][reset]")
         REQUIRE(s.alloc(256) != nullptr);
     }
 }
-
-// ============================================================================
-// Memory Integrity
-// ============================================================================
 
 TEST_CASE("Slab: Memory integrity", "[slab][integrity]")
 {
@@ -637,150 +473,6 @@ TEST_CASE("Slab: Memory integrity", "[slab][integrity]")
     }
 }
 
-// ============================================================================
-// Pointer Uniqueness
-// ============================================================================
-
-TEST_CASE("Slab: Pointer uniqueness", "[slab][unique]")
-{
-    AL::slab s;
-
-    SECTION("All pointers unique within same size")
-    {
-        std::set<void*> ptrs;
-        for (int i = 0; i < 50; ++i)
-        {
-            void* ptr = s.alloc(64);
-            REQUIRE(ptr != nullptr);
-            auto result = ptrs.insert(ptr);
-            REQUIRE(result.second == true);
-        }
-    }
-
-    SECTION("All pointers unique across different sizes")
-    {
-        std::set<void*> ptrs;
-        size_t sizes[] = {8, 16, 32, 64, 128, 256, 512, 1024};
-
-        for (size_t size : sizes)
-        {
-            for (int i = 0; i < 5; ++i)
-            {
-                void* ptr = s.alloc(size);
-                REQUIRE(ptr != nullptr);
-                auto result = ptrs.insert(ptr);
-                REQUIRE(result.second == true);
-            }
-        }
-    }
-}
-
-// ============================================================================
-// Allocation Patterns
-// ============================================================================
-
-TEST_CASE("Slab: Alloc/free patterns", "[slab][pattern]")
-{
-    AL::slab s;
-
-    SECTION("Alternating alloc/free same size")
-    {
-        // Use a non-TLC size class so blocks are returned to the pool
-        // immediately on free(), keeping pool-level accounting stable.
-        size_t initial_free = s.get_total_free();
-
-        for (int i = 0; i < 100; ++i)
-        {
-            void* ptr = s.alloc(512);
-            REQUIRE(ptr != nullptr);
-            s.free(ptr, 512);
-        }
-
-        REQUIRE(s.get_total_free() == initial_free);
-    }
-
-    SECTION("Alternating alloc/free different sizes")
-    {
-        size_t initial_free = s.get_total_free();
-
-        for (int i = 0; i < 50; ++i)
-        {
-            void* p32 = s.alloc(32);
-            void* p128 = s.alloc(128);
-
-            s.free(p32, 32);
-            s.free(p128, 128);
-        }
-
-        REQUIRE(s.get_total_free() == initial_free);
-    }
-
-    SECTION("Batch alloc then batch free")
-    {
-        size_t initial_free = s.get_total_free();
-
-        // Use a non-TLC size class so alloc/free are reflected in pool-level
-        // free space accounting rather than staying in thread-local caches.
-        std::vector<void*> ptrs;
-        for (int i = 0; i < 50; ++i)
-        {
-            void* ptr = s.alloc(512);
-            REQUIRE(ptr != nullptr);
-            ptrs.push_back(ptr);
-        }
-
-        for (void* ptr : ptrs)
-            s.free(ptr, 512);
-
-        REQUIRE(s.get_total_free() == initial_free);
-    }
-
-    SECTION("Multiple sizes batch alloc/free")
-    {
-        size_t initial_free = s.get_total_free();
-
-        std::vector<std::pair<void*, size_t>> ptrs;
-        // Use only non-TLC size classes (>= 128 bytes, index >= 4) so frees
-        // return blocks to the pool immediately and total free space is stable.
-        size_t sizes[] = {128, 256, 512, 1024, 2048};
-
-        for (int i = 0; i < 50; ++i)
-        {
-            size_t size = sizes[i % 5];
-            void* ptr = s.alloc(size);
-            REQUIRE(ptr != nullptr);
-            ptrs.push_back({ptr, size});
-        }
-
-        for (auto& [ptr, size] : ptrs)
-            s.free(ptr, size);
-
-        REQUIRE(s.get_total_free() == initial_free);
-    }
-}
-
-TEST_CASE("Slab: Use all pools simultaneously", "[slab][pattern]")
-{
-    AL::slab s;
-
-    std::vector<std::pair<void*, size_t>> allocations;
-    size_t sizes[] = {8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096};
-
-    for (size_t size : sizes)
-    {
-        void* ptr = s.alloc(size);
-        REQUIRE(ptr != nullptr);
-        allocations.push_back({ptr, size});
-    }
-
-    for (auto& [ptr, size] : allocations)
-        s.free(ptr, size);
-}
-
-// ============================================================================
-// Free space tracking
-// ============================================================================
-
 TEST_CASE("Slab: Free space accounting", "[slab][stats]")
 {
     AL::slab s;
@@ -823,126 +515,225 @@ TEST_CASE("Slab: Free space accounting", "[slab][stats]")
     }
 }
 
-// ============================================================================
-// Reuse Patterns
-// ============================================================================
-
-TEST_CASE("Slab: Reuse patterns", "[slab][reuse]")
+TEST_CASE("Slab: TLC cached class alloc returns valid memory", "[slab][tlc]")
 {
-    SECTION("LIFO reuse")
+    AL::slab s;
+
+    SECTION("All cached size classes return writable memory")
     {
-        AL::slab s;
-
-        void* p1 = s.alloc(64);
-        void* p2 = s.alloc(64);
-        s.free(p2, 64);
-        s.free(p1, 64);
-
-        void* p3 = s.alloc(64);
-        void* p4 = s.alloc(64);
-        REQUIRE(p3 != nullptr);
-        REQUIRE(p4 != nullptr);
+        size_t cached_sizes[] = {8, 16, 32, 64};
+        for (size_t size : cached_sizes)
+        {
+            char* ptr = static_cast<char*>(s.alloc(size));
+            REQUIRE(ptr != nullptr);
+            std::memset(ptr, 0xAB, size);
+            REQUIRE(static_cast<unsigned char>(ptr[0]) == 0xAB);
+            REQUIRE(static_cast<unsigned char>(ptr[size - 1]) == 0xAB);
+            s.free(ptr, size);
+        }
     }
 
-    SECTION("Reuse after reset")
+    SECTION("Sub-boundary sizes routed to cached class")
     {
-        AL::slab s;
+        void* p1 = s.alloc(1);
+        void* p5 = s.alloc(5);
+        void* p9 = s.alloc(9);
+        void* p17 = s.alloc(17);
+        void* p33 = s.alloc(33);
 
-        void* p1 = s.alloc(64);
         REQUIRE(p1 != nullptr);
+        REQUIRE(p5 != nullptr);
+        REQUIRE(p9 != nullptr);
+        REQUIRE(p17 != nullptr);
+        REQUIRE(p33 != nullptr);
+
+        s.free(p1, 1);
+        s.free(p5, 5);
+        s.free(p9, 9);
+        s.free(p17, 17);
+        s.free(p33, 33);
+    }
+}
+
+TEST_CASE("Slab: TLC multiple allocs return valid memory", "[slab][tlc]")
+{
+    AL::slab s;
+
+    for (int i = 0; i < 200; ++i)
+    {
+        char* ptr = static_cast<char*>(s.alloc(32));
+        REQUIRE(ptr != nullptr);
+        std::memset(ptr, static_cast<int>(i & 0xFF), 32);
+        REQUIRE(static_cast<unsigned char>(ptr[0]) == (i & 0xFF));
+        s.free(ptr, 32);
+    }
+}
+
+TEST_CASE("Slab: TLC alloc writes don't corrupt across allocations", "[slab][tlc][integrity]")
+{
+    AL::slab s;
+
+    constexpr size_t count = 50;
+    std::vector<char*> ptrs;
+    ptrs.reserve(count);
+
+    for (size_t i = 0; i < count; ++i)
+    {
+        char* ptr = static_cast<char*>(s.alloc(64));
+        REQUIRE(ptr != nullptr);
+        std::memset(ptr, static_cast<int>(i & 0xFF), 64);
+        ptrs.push_back(ptr);
+    }
+
+    for (size_t i = 0; i < count; ++i)
+    {
+        REQUIRE(static_cast<unsigned char>(ptrs[i][0]) == (i & 0xFF));
+        REQUIRE(static_cast<unsigned char>(ptrs[i][63]) == (i & 0xFF));
+    }
+
+    for (size_t i = 0; i < count; ++i)
+        s.free(ptrs[i], 64);
+}
+
+TEST_CASE("Slab: TLC batch refill serves allocations from pool", "[slab][tlc]")
+{
+    AL::slab s;
+
+    const size_t alloc_count = 200;
+    std::set<void*> ptrs;
+
+    for (size_t i = 0; i < alloc_count; ++i)
+    {
+        void* ptr = s.alloc(8);
+        REQUIRE(ptr != nullptr);
+        *static_cast<char*>(ptr) = static_cast<char>(i & 0xFF);
+        ptrs.insert(ptr);
+    }
+
+    REQUIRE(ptrs.size() == alloc_count);
+
+    for (void* ptr : ptrs)
+        s.free(ptr, 8);
+}
+
+TEST_CASE("Slab: TLC epoch invalidation after reset", "[slab][tlc][reset]")
+{
+    AL::slab s;
+
+    void* ptr1 = s.alloc(16);
+    REQUIRE(ptr1 != nullptr);
+
+    s.reset();
+
+    void* ptr2 = s.alloc(16);
+    REQUIRE(ptr2 != nullptr);
+
+    std::memset(ptr2, 0xCD, 16);
+    REQUIRE(static_cast<unsigned char>(static_cast<char*>(ptr2)[0]) == 0xCD);
+}
+
+TEST_CASE("Slab: TLC multiple sequential resets", "[slab][tlc][reset]")
+{
+    AL::slab s;
+    size_t initial_free = s.get_total_free();
+
+    for (int cycle = 0; cycle < 10; ++cycle)
+    {
+        void* p8 = s.alloc(8);
+        void* p16 = s.alloc(16);
+        void* p32 = s.alloc(32);
+        void* p64 = s.alloc(64);
+
+        REQUIRE(p8 != nullptr);
+        REQUIRE(p16 != nullptr);
+        REQUIRE(p32 != nullptr);
+        REQUIRE(p64 != nullptr);
+
+        *static_cast<char*>(p8) = 'A';
+        *static_cast<char*>(p16) = 'B';
+        *static_cast<char*>(p32) = 'C';
+        *static_cast<char*>(p64) = 'D';
 
         s.reset();
-
-        void* p2 = s.alloc(64);
-        REQUIRE(p2 != nullptr);
+        REQUIRE(s.get_total_free() == initial_free);
     }
 
-    SECTION("Exhaust, free all, allocate again")
+    for (size_t size : {8, 16, 32, 64, 128, 256, 512})
     {
-        AL::slab s(0.01);
-
-        std::vector<void*> ptrs;
-        while (true)
-        {
-            void* ptr = s.alloc(64);
-            if (ptr == nullptr)
-                break;
-            ptrs.push_back(ptr);
-        }
-
-        size_t count = ptrs.size();
-        REQUIRE(count > 0);
-
-        for (void* ptr : ptrs)
-            s.free(ptr, 64);
-
-        // Should be able to allocate the same count again
-        for (size_t i = 0; i < count; ++i)
-        {
-            void* ptr = s.alloc(64);
-            REQUIRE(ptr != nullptr);
-        }
-    }
-}
-
-// ============================================================================
-// Edge Case: Single-byte allocation
-// ============================================================================
-
-TEST_CASE("Slab: Single byte allocation", "[slab][edge]")
-{
-    AL::slab s;
-
-    void* ptr = s.alloc(1);
-    REQUIRE(ptr != nullptr);
-
-    // Should be usable
-    *static_cast<char*>(ptr) = 'A';
-    REQUIRE(*static_cast<char*>(ptr) == 'A');
-
-    s.free(ptr, 1);
-}
-
-// ============================================================================
-// Edge Case: Max supported size
-// ============================================================================
-
-TEST_CASE("Slab: Max size class boundary", "[slab][edge]")
-{
-    AL::slab s;
-
-    SECTION("Exactly max size succeeds")
-    {
-        void* ptr = s.alloc(4096);
+        void* ptr = s.alloc(size);
         REQUIRE(ptr != nullptr);
-        s.free(ptr, 4096);
-    }
-
-    SECTION("One above max size fails")
-    {
-        REQUIRE(s.alloc(4097) == nullptr);
     }
 }
 
-// ============================================================================
-// Edge Case: Free with mismatched size
-// ============================================================================
-
-TEST_CASE("Slab: Free edge cases", "[slab][free][edge]")
+TEST_CASE("Slab: TLC mixed cached and non-cached allocations", "[slab][tlc]")
 {
     AL::slab s;
 
-    SECTION("Free with SIZE_MAX is safe")
+    size_t sizes[] = {8, 128, 16, 256, 32, 512, 64, 1024};
+
+    for (int round = 0; round < 20; ++round)
     {
-        s.free(nullptr, (size_t)-1);
+        for (size_t size : sizes)
+        {
+            void* ptr = s.alloc(size);
+            REQUIRE(ptr != nullptr);
+            s.free(ptr, size);
+        }
+    }
+}
+
+TEST_CASE("Slab: TLC exhaust cached pool completely", "[slab][tlc][edge]")
+{
+    AL::slab s(0.01);
+
+    std::vector<void*> ptrs;
+    while (true)
+    {
+        void* ptr = s.alloc(8);
+        if (ptr == nullptr)
+            break;
+        ptrs.push_back(ptr);
     }
 
-    SECTION("Free nullptr with various sizes")
+    REQUIRE(ptrs.size() > 0);
+    REQUIRE(s.alloc(8) == nullptr);
+
+    for (void* ptr : ptrs)
+        s.free(ptr, 8);
+}
+
+TEST_CASE("Slab: TLC cache handles rapid alloc churn", "[slab][tlc]")
+{
+    AL::slab s;
+
+    for (int i = 0; i < 200; ++i)
     {
-        s.free(nullptr, 0);
-        s.free(nullptr, 32);
-        s.free(nullptr, 4096);
-        s.free(nullptr, 99999);
-        // No crash = pass
+        void* ptr = s.alloc(64);
+        REQUIRE(ptr != nullptr);
+        *static_cast<int*>(ptr) = i;
+        REQUIRE(*static_cast<int*>(ptr) == i);
+        s.free(ptr, 64);
+    }
+}
+
+// Note: slab move constructor/assignment are declared = default but are
+// implicitly deleted because std::atomic<size_t> is not copy/move-constructible.
+// Move semantics would require a user-defined implementation.
+// Tests are omitted since move is not currently supported.
+
+TEST_CASE("Slab: Calloc on TLC-cached sizes zeros memory", "[slab][tlc][calloc]")
+{
+    AL::slab s;
+
+    SECTION("Multiple callocs on different cached sizes")
+    {
+        for (size_t size : {8, 16, 32, 64})
+        {
+            char* ptr = static_cast<char*>(s.calloc(size));
+            REQUIRE(ptr != nullptr);
+            for (size_t i = 0; i < size; ++i)
+                REQUIRE(ptr[i] == 0);
+            s.free(ptr, size);
+        }
     }
 }

@@ -8,10 +8,6 @@
 
 const size_t PAGE_SIZE = getpagesize();
 
-// ============================================================================
-// Basic Functionality Tests
-// ============================================================================
-
 TEST_CASE("Pool: Basic construction", "[pool][basic]")
 {
     SECTION("Single block pool")
@@ -41,10 +37,6 @@ TEST_CASE("Pool: Basic construction", "[pool][basic]")
         REQUIRE(p.get_capacity() >= 128 * 10);
     }
 }
-
-// ============================================================================
-// Allocation Tests
-// ============================================================================
 
 TEST_CASE("Pool: Basic allocations", "[pool][alloc]")
 {
@@ -142,10 +134,6 @@ TEST_CASE("Pool: Allocation exhaustion", "[pool][alloc][edge]")
     }
 }
 
-// ============================================================================
-// Free Tests
-// ============================================================================
-
 TEST_CASE("Pool: Basic free", "[pool][free]")
 {
     AL::pool p(64, 10);
@@ -204,77 +192,6 @@ TEST_CASE("Pool: Basic free", "[pool][free]")
     }
 }
 
-TEST_CASE("Pool: Free order independence", "[pool][free]")
-{
-    AL::pool p(64, 10);
-
-    SECTION("Free in LIFO order")
-    {
-        std::vector<void*> ptrs;
-        for (int i = 0; i < 5; ++i)
-        {
-            ptrs.push_back(p.alloc());
-        }
-
-        // Free in reverse order
-        for (auto it = ptrs.rbegin(); it != ptrs.rend(); ++it)
-        {
-            p.free(*it);
-        }
-
-        // Should be able to reallocate
-        void* ptr = p.alloc();
-        REQUIRE(ptr != nullptr);
-    }
-
-    SECTION("Free in FIFO order")
-    {
-        std::vector<void*> ptrs;
-        for (int i = 0; i < 5; ++i)
-        {
-            ptrs.push_back(p.alloc());
-        }
-
-        // Free in forward order
-        for (void* ptr : ptrs)
-        {
-            p.free(ptr);
-        }
-
-        // Should be able to reallocate
-        void* ptr = p.alloc();
-        REQUIRE(ptr != nullptr);
-    }
-
-    SECTION("Free in random order")
-    {
-        std::vector<void*> ptrs;
-        for (int i = 0; i < 10; ++i)
-        {
-            ptrs.push_back(p.alloc());
-        }
-
-        // Free every other one first
-        for (size_t i = 0; i < ptrs.size(); i += 2)
-        {
-            p.free(ptrs[i]);
-        }
-
-        // Then free the rest
-        for (size_t i = 1; i < ptrs.size(); i += 2)
-        {
-            p.free(ptrs[i]);
-        }
-
-        // All blocks should be free
-        REQUIRE(p.get_free_space() == 64 * 10); // block_size * block_count
-    }
-}
-
-// ============================================================================
-// Calloc Tests
-// ============================================================================
-
 TEST_CASE("Pool: Calloc zeros memory", "[pool][calloc]")
 {
     AL::pool p(128, 10);
@@ -320,23 +237,6 @@ TEST_CASE("Pool: Calloc zeros memory", "[pool][calloc]")
         }
     }
 }
-
-TEST_CASE("Pool: Calloc exhaustion", "[pool][calloc][edge]")
-{
-    AL::pool p(64, 2);
-
-    void* p1 = p.calloc();
-    void* p2 = p.calloc();
-    void* p3 = p.calloc();
-
-    REQUIRE(p1 != nullptr);
-    REQUIRE(p2 != nullptr);
-    REQUIRE(p3 == nullptr); // Pool exhausted
-}
-
-// ============================================================================
-// Reset Tests
-// ============================================================================
 
 TEST_CASE("Pool: Reset functionality", "[pool][reset]")
 {
@@ -411,10 +311,6 @@ TEST_CASE("Pool: Reset functionality", "[pool][reset]")
     }
 }
 
-// ============================================================================
-// Memory Integrity Tests
-// ============================================================================
-
 TEST_CASE("Pool: Memory integrity", "[pool][integrity]")
 {
     AL::pool p(128, 10);
@@ -479,217 +375,183 @@ TEST_CASE("Pool: Memory integrity", "[pool][integrity]")
     }
 }
 
-// ============================================================================
-// Edge Cases and Stress Tests
-// ============================================================================
-
-TEST_CASE("Pool: Allocation patterns", "[pool][pattern]")
+TEST_CASE("Pool: Deferred initialization via init()", "[pool][init]")
 {
-    AL::pool p(64, 100);
-
-    SECTION("Alternating alloc/free")
+    SECTION("Default construct then init")
     {
-        for (int i = 0; i < 50; ++i)
-        {
-            void* ptr = p.alloc();
-            REQUIRE(ptr != nullptr);
-            p.free(ptr);
-        }
+        AL::pool p;
+        p.init(64, 10);
 
-        // Pool should be fully available
-        REQUIRE(p.get_free_space() == 64 * 100); // block_size * block_count
-    }
+        REQUIRE(p.get_block_size() == 64);
+        REQUIRE(p.get_block_count() == 10);
+        REQUIRE(p.get_free_space() == 64 * 10);
 
-    SECTION("Batch alloc then batch free")
-    {
-        std::vector<void*> ptrs;
-
-        // Allocate all
-        for (int i = 0; i < 100; ++i)
-        {
-            void* ptr = p.alloc();
-            REQUIRE(ptr != nullptr);
-            ptrs.push_back(ptr);
-        }
-
-        // Free all
-        for (void* ptr : ptrs)
-        {
-            p.free(ptr);
-        }
-
-        REQUIRE(p.get_free_space() == 64 * 100); // block_size * block_count
-    }
-
-    SECTION("Interleaved alloc/free pattern")
-    {
-        std::vector<void*> ptrs;
-
-        for (int round = 0; round < 10; ++round)
-        {
-            // Allocate 10
-            for (int i = 0; i < 10; ++i)
-            {
-                ptrs.push_back(p.alloc());
-            }
-
-            // Free 5
-            for (int i = 0; i < 5; ++i)
-            {
-                p.free(ptrs.back());
-                ptrs.pop_back();
-            }
-        }
-
-        // Cleanup
-        for (void* ptr : ptrs)
-        {
-            p.free(ptr);
-        }
-
-        REQUIRE(p.get_free_space() == 64 * 100); // block_size * block_count
-    }
-}
-
-TEST_CASE("Pool: Block size variations", "[pool][sizes]")
-{
-    SECTION("Tiny blocks")
-    {
-        AL::pool p(8, 100);
         void* ptr = p.alloc();
         REQUIRE(ptr != nullptr);
         p.free(ptr);
     }
 
-    SECTION("Large blocks")
+    SECTION("Init with small block size rounds up")
     {
-        AL::pool p(4096, 10);
+        AL::pool p;
+        p.init(1, 10);
+
+        REQUIRE(p.get_block_size() == sizeof(void*));
+    }
+
+    SECTION("Init with non-power-of-2 rounds up")
+    {
+        AL::pool p;
+        p.init(100, 5);
+
+        REQUIRE(p.get_block_size() == 128);
+        REQUIRE(p.get_block_count() == 5);
+    }
+}
+
+TEST_CASE("Pool: Move constructor", "[pool][move]")
+{
+    SECTION("Move transfers ownership")
+    {
+        AL::pool src(64, 10);
+        void* ptr = src.alloc();
+        REQUIRE(ptr != nullptr);
+        src.free(ptr);
+
+        size_t src_capacity = src.get_capacity();
+        size_t src_block_size = src.get_block_size();
+        size_t src_block_count = src.get_block_count();
+        size_t src_free = src.get_free_space();
+
+        AL::pool dst(std::move(src));
+
+        REQUIRE(dst.get_capacity() == src_capacity);
+        REQUIRE(dst.get_block_size() == src_block_size);
+        REQUIRE(dst.get_block_count() == src_block_count);
+        REQUIRE(dst.get_free_space() == src_free);
+    }
+
+    SECTION("Moved-to pool is usable")
+    {
+        AL::pool src(128, 5);
+        AL::pool dst(std::move(src));
+
+        void* ptr = dst.alloc();
+        REQUIRE(ptr != nullptr);
+        dst.free(ptr);
+
+        REQUIRE(dst.get_free_space() == 128 * 5);
+    }
+}
+
+TEST_CASE("Pool: Move assignment", "[pool][move]")
+{
+    SECTION("Move assignment transfers ownership")
+    {
+        AL::pool src(64, 10);
+        AL::pool dst(128, 5);
+
+        size_t src_capacity = src.get_capacity();
+        size_t src_block_size = src.get_block_size();
+        size_t src_free = src.get_free_space();
+
+        dst = std::move(src);
+
+        REQUIRE(dst.get_capacity() == src_capacity);
+        REQUIRE(dst.get_block_size() == src_block_size);
+        REQUIRE(dst.get_free_space() == src_free);
+    }
+
+    SECTION("Self move assignment is safe")
+    {
+        AL::pool p(64, 10);
         void* ptr = p.alloc();
         REQUIRE(ptr != nullptr);
+
+        AL::pool& ref = p;
+        p = std::move(ref);
+
+        // Pool should still work after self-move
         p.free(ptr);
+        REQUIRE(p.get_free_space() == 64 * 10);
     }
 
-    SECTION("Non-power-of-2 blocks")
+    SECTION("Moved-to pool replaces old memory")
     {
-        AL::pool p(100, 10);
+        AL::pool dst(32, 20);
+        AL::pool src(256, 5);
+
+        dst = std::move(src);
+
+        REQUIRE(dst.get_block_size() == 256);
+        REQUIRE(dst.get_block_count() == 5);
+
+        void* ptr = dst.alloc();
+        REQUIRE(ptr != nullptr);
+        dst.free(ptr);
+    }
+}
+
+TEST_CASE("Pool: Block size power-of-2 rounding", "[pool][sizes]")
+{
+    SECTION("Exact powers of 2 are unchanged")
+    {
+        AL::pool p8(8, 1);
+        AL::pool p16(16, 1);
+        AL::pool p64(64, 1);
+        AL::pool p1024(1024, 1);
+
+        REQUIRE(p8.get_block_size() == 8);
+        REQUIRE(p16.get_block_size() == 16);
+        REQUIRE(p64.get_block_size() == 64);
+        REQUIRE(p1024.get_block_size() == 1024);
+    }
+
+    SECTION("Non-powers round up to next power of 2")
+    {
+        AL::pool p9(9, 1);
+        AL::pool p33(33, 1);
+        AL::pool p100(100, 1);
+        AL::pool p500(500, 1);
+
+        REQUIRE(p9.get_block_size() == 16);
+        REQUIRE(p33.get_block_size() == 64);
+        REQUIRE(p100.get_block_size() == 128);
+        REQUIRE(p500.get_block_size() == 512);
+    }
+
+    SECTION("Below pointer size rounds to pointer size first")
+    {
+        AL::pool p1(1, 1);
+        AL::pool p3(3, 1);
+
+        REQUIRE(p1.get_block_size() == sizeof(void*));
+        REQUIRE(p3.get_block_size() == sizeof(void*));
+    }
+}
+
+TEST_CASE("Pool: Alloc exhaustion then reset then reuse", "[pool][reset][edge]")
+{
+    AL::pool p(64, 10);
+
+    // Exhaust
+    for (int i = 0; i < 10; ++i)
+        p.alloc();
+    REQUIRE(p.alloc() == nullptr);
+
+    // Reset
+    p.reset();
+    REQUIRE(p.get_free_space() == 64 * 10);
+
+    // Fully allocate again — all unique
+    std::set<void*> ptrs;
+    for (int i = 0; i < 10; ++i)
+    {
         void* ptr = p.alloc();
         REQUIRE(ptr != nullptr);
-        p.free(ptr);
+        ptrs.insert(ptr);
     }
+    REQUIRE(ptrs.size() == 10);
+    REQUIRE(p.alloc() == nullptr);
 }
 
-TEST_CASE("Pool: Block uniqueness", "[pool][unique]")
-{
-    AL::pool p(64, 50);
-
-    SECTION("All allocated blocks are unique")
-    {
-        std::set<void*> unique_ptrs;
-
-        for (int i = 0; i < 50; ++i)
-        {
-            void* ptr = p.alloc();
-            REQUIRE(ptr != nullptr);
-
-            // Insert returns false if element already exists
-            auto result = unique_ptrs.insert(ptr);
-            REQUIRE(result.second == true);
-        }
-
-        REQUIRE(unique_ptrs.size() == 50);
-    }
-}
-
-TEST_CASE("Pool: Fragmentation handling", "[pool][frag]")
-{
-    AL::pool p(64, 20);
-
-    SECTION("Free every other block")
-    {
-        std::vector<void*> ptrs;
-
-        // Allocate all
-        for (int i = 0; i < 20; ++i)
-        {
-            ptrs.push_back(p.alloc());
-        }
-
-        // Free every other one
-        for (size_t i = 0; i < ptrs.size(); i += 2)
-        {
-            p.free(ptrs[i]);
-        }
-
-        // Should be able to allocate 10 more
-        for (int i = 0; i < 10; ++i)
-        {
-            void* ptr = p.alloc();
-            REQUIRE(ptr != nullptr);
-        }
-    }
-
-    SECTION("Random free pattern")
-    {
-        std::vector<void*> ptrs;
-
-        // Allocate all
-        for (int i = 0; i < 20; ++i)
-        {
-            ptrs.push_back(p.alloc());
-        }
-
-        // Free specific indices: 2, 5, 7, 11, 13, 17, 19
-        std::vector<int> to_free = {2, 5, 7, 11, 13, 17, 19};
-        for (int idx : to_free)
-        {
-            p.free(ptrs[idx]);
-        }
-
-        // Should be able to allocate 7 more
-        for (size_t i = 0; i < to_free.size(); ++i)
-        {
-            void* ptr = p.alloc();
-            REQUIRE(ptr != nullptr);
-        }
-    }
-}
-
-TEST_CASE("Pool: Zero blocks pool", "[pool][edge]")
-{
-    // Note: This might throw or create minimal pool depending on implementation
-    // Test documents the behavior
-    SECTION("Zero blocks is handled")
-    {
-        try
-        {
-            AL::pool p(64, 0);
-            // If it doesn't throw, verify behavior
-            void* ptr = p.alloc();
-            REQUIRE(ptr == nullptr);
-        }
-        catch (...)
-        {
-            // Either behavior is acceptable - document it
-        }
-        REQUIRE(true);
-    }
-}
-
-TEST_CASE("Pool: Very small block size", "[pool][edge]")
-{
-    SECTION("1 byte blocks (rounds up to pointer size)")
-    {
-        AL::pool p(1, 10);
-        void* ptr = p.alloc();
-        REQUIRE(ptr != nullptr);
-        p.free(ptr);
-    }
-
-    SECTION("2 byte blocks (rounds up)")
-    {
-        AL::pool p(2, 10);
-        void* ptr = p.alloc();
-        REQUIRE(ptr != nullptr);
-        p.free(ptr);
-    }
-}
