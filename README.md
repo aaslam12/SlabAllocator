@@ -12,6 +12,7 @@ A high-performance, thread-safe memory allocator library written in C++20. Imple
   - [Building](#building)
   - [Running Tests](#running-tests)
   - [Sanitizers](#sanitizers)
+  - [Using as a Library](#using-as-a-library)
 - [Benchmarks](#benchmarks)
   - [Single-threaded by size](#single-threaded-allocfree-by-size)
   - [Linear allocation](#linear-allocation-alloc-only-no-free)
@@ -94,6 +95,40 @@ python build.py --tsan
 ```
 
 Sanitizers use separate build directories (`build/Debug-asan`, `build/Debug-tsan`) to avoid conflicts. They cannot be used together.
+
+### Using as a Library
+
+Palloc can be installed and used in other CMake projects:
+
+```bash
+# Install user specific library
+python build.py --config Release --build-only --install ~/.local
+
+# Or install system wide (requires sudo)
+python build.py --config Release --build-only --install /usr/local
+```
+
+This installs:
+- Headers: `~/.local/include/`
+- Library: `~/.local/lib/libpalloc.a`
+- CMake package config: `~/.local/lib/cmake/palloc/`
+
+**Using in another project:**
+
+In your `CMakeLists.txt`:
+```cmake
+find_package(palloc REQUIRED)
+add_executable(my_app main.cpp)
+target_link_libraries(my_app PRIVATE palloc::palloc)
+```
+
+Configure and build:
+```bash
+cmake -B build -DCMAKE_PREFIX_PATH=~/.local
+cmake --build build
+```
+
+If installed system-wide, the `CMAKE_PREFIX_PATH` hint is not needed.
 
 ---
 

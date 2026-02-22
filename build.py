@@ -36,6 +36,10 @@ def main():
     parser.add_argument(
         "--static", action="store_true", help="Link libraries statically"
     )
+    parser.add_argument(
+        "--install",
+        help="Install to the specified prefix (e.g., ~/.local or /usr/local)",
+    )
     sanitizer_group = parser.add_mutually_exclusive_group()
     sanitizer_group.add_argument(
         "--asan",
@@ -213,6 +217,16 @@ def main():
     else:
         print(f"Error: Executable not found at {executable_path}")
         sys.exit(1)
+
+    # --- Install Step ---
+    if args.install:
+        print(f"\n=== Installing to {args.install} ===")
+        subprocess.check_call(
+            ["cmake", "--install", build_dir, "--prefix", args.install]
+        )
+        print(
+            f"Installation complete. Headers in {args.install}/include, library in {args.install}/lib"
+        )
 
 
 if __name__ == "__main__":

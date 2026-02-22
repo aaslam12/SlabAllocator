@@ -60,45 +60,45 @@ list(FILTER ALL_SRC EXCLUDE REGEX ".*/main.cpp$")
 # -----------------------
 # Core library
 # -----------------------
-add_library(core STATIC ${ALL_SRC})
-target_include_directories(core
+add_library(palloc STATIC ${ALL_SRC})
+target_include_directories(palloc
   PUBLIC
     $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>
 )
 
-target_compile_features(core PUBLIC cxx_std_20)
-target_link_libraries(core PUBLIC)
+target_compile_features(palloc PUBLIC cxx_std_20)
+target_link_libraries(palloc PUBLIC)
 
 # Define macros for build type and testing
 if(PALLOC_BUILD_TESTS)
-  target_compile_definitions(core PUBLIC PALLOC_TESTING)
+  target_compile_definitions(palloc PUBLIC PALLOC_TESTING)
 endif()
 
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-  target_compile_definitions(core PUBLIC PALLOC_DEBUG)
+  target_compile_definitions(palloc PUBLIC PALLOC_DEBUG)
 else()
-  target_compile_definitions(core PUBLIC PALLOC_RELEASE)
-endif()
-
-if(PALLOC_ENABLE_SANITIZERS AND CMAKE_BUILD_TYPE STREQUAL "Debug")
-  target_compile_options(core PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
-  target_link_options(core PRIVATE -fsanitize=address,undefined)
-endif()
-
-# -----------------------
-# Executable
-# -----------------------
-add_executable(palloc "${MAIN_CPP}")
-target_link_libraries(palloc PRIVATE core)
-
-if(PALLOC_STATIC_LINKING)
-  target_link_options(palloc PRIVATE -static -static-libgcc -static-libstdc++)
+  target_compile_definitions(palloc PUBLIC PALLOC_RELEASE)
 endif()
 
 if(PALLOC_ENABLE_SANITIZERS AND CMAKE_BUILD_TYPE STREQUAL "Debug")
   target_compile_options(palloc PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
   target_link_options(palloc PRIVATE -fsanitize=address,undefined)
+endif()
+
+# -----------------------
+# Executable
+# -----------------------
+add_executable(palloc_exe "${MAIN_CPP}")
+target_link_libraries(palloc_exe PRIVATE palloc)
+
+if(PALLOC_STATIC_LINKING)
+  target_link_options(palloc_exe PRIVATE -static -static-libgcc -static-libstdc++)
+endif()
+
+if(PALLOC_ENABLE_SANITIZERS AND CMAKE_BUILD_TYPE STREQUAL "Debug")
+  target_compile_options(palloc_exe PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
+  target_link_options(palloc_exe PRIVATE -fsanitize=address,undefined)
 endif()
 
 # -----------------------
@@ -111,7 +111,7 @@ if(PALLOC_BUILD_TESTS AND NOT CMAKE_BUILD_TYPE STREQUAL "Release")
   file(GLOB_RECURSE TEST_SRCS CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/tests/*.cpp")
   if(TEST_SRCS)
     add_executable(tests ${TEST_SRCS})
-    target_link_libraries(tests PRIVATE core Catch2::Catch2WithMain)
+    target_link_libraries(tests PRIVATE palloc Catch2::Catch2WithMain)
     if(PALLOC_STATIC_LINKING)
       target_link_options(tests PRIVATE -static -static-libgcc -static-libstdc++)
     endif()
@@ -134,13 +134,13 @@ if(PALLOC_BUILD_STRESS_TESTS)
     if(test_name STREQUAL "jemalloc_vs_palloc" OR test_name STREQUAL "dynamic_slab_vs_jemalloc" OR test_name STREQUAL "allocator_showdown")
       if(JEMALLOC_LIB AND JEMALLOC_INCLUDE)
         target_include_directories(${test_name} PRIVATE ${JEMALLOC_INCLUDE})
-        target_link_libraries(${test_name} PRIVATE core ${JEMALLOC_LIB})
+        target_link_libraries(${test_name} PRIVATE palloc ${JEMALLOC_LIB})
       else()
         message(WARNING "jemalloc not found - skipping ${test_name} target")
         continue()
       endif()
     else()
-      target_link_libraries(${test_name} PRIVATE core)
+      target_link_libraries(${test_name} PRIVATE palloc)
     endif()
     if(PALLOC_STATIC_LINKING)
       target_link_options(${test_name} PRIVATE -static -static-libgcc -static-libstdc++)
@@ -169,3 +169,49 @@ endif()
 message(STATUS "Project: ${PROJECT_NAME} ${PROJECT_VERSION}")
 message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
 message(STATUS "Build tests: ${PALLOC_BUILD_TESTS}")
+
+# -----------------------
+# Install rules
+# -----------------------
+install(
+  TARGETS palloc
+  EXPORT pallocTargets
+  LIBRARY DESTINATION lib
+  ARCHIVE DESTINATION lib
+  RUNTIME DESTINATION bin
+)
+
+install(
+  DIRECTORY include/
+  DESTINATION include
+)
+
+install(
+  EXPORT pallocTargets
+  FILE pallocTargets.cmake
+  NAMESPACE palloc::
+  DESTINATION lib/cmake/palloc
+)
+
+# Create and install config file
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/pallocConfig.cmake"
+  "include(\"\${CMAKE_CURRENT_LIST_DIR}/pallocTargets.cmake\")\n"
+  "set(palloc_FOUND TRUE)\n"
+)
+
+install(
+  FILES "${CMAKE_CURRENT_BINARY_DIR}/pallocConfig.cmake"
+  DESTINATION lib/cmake/palloc
+)
+
+# Create and install version file
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/pallocConfigVersion.cmake"
+  "set(PACKAGE_VERSION \"${CMAKE_PROJECT_VERSION}\")\n"
+  "set(PACKAGE_VERSION_COMPATIBLE TRUE)\n"
+  "set(PACKAGE_VERSION_EXACT FALSE)\n"
+)
+
+install(
+  FILES "${CMAKE_CURRENT_BINARY_DIR}/pallocConfigVersion.cmake"
+  DESTINATION lib/cmake/palloc
+)
