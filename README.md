@@ -19,9 +19,9 @@ A high-performance, thread-safe memory allocator library written in C++20. Imple
 
 | Allocator | Strategy | Thread Safety 
 |-----------|----------|--------------|
-| `Arena` | Linear bump allocator | ✅ Lock-free  |
-| `Pool` | Free-list allocator | ✅ Mutex-protected |
-| `Slab` | Multi-pool dispatcher | ✅ Inherited from Pool |
+| `Arena` | Linear bump allocator | Lock-free  |
+| `Pool` | Free-list allocator | Mutex-protected |
+| `Slab` | Multi-pool dispatcher | Inherited from Pool |
 
 All allocators:
 - Map memory directly with `mmap` — no `malloc` or `new`
@@ -33,14 +33,15 @@ All allocators:
 
 ### Requirements
 
-- C++20 compiler (GCC 10+ or Clang 12+)
+- C++20 compiler
 - CMake 3.10+
 - Catch2 v3
-- Ninja (optional, recommended, auto-detected for faster builds)
+- Ninja (recommended)
 
 ### Building
 
 ```bash
+# compile, run tests, and run application
 python build.py
 
 python build.py --config Release
@@ -49,6 +50,7 @@ python build.py --clean
 
 python build.py --build-only
 
+# compiles and only runs the stress tests
 python build.py --stress-test
 ```
 

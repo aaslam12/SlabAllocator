@@ -2,6 +2,7 @@
 
 #include "pool.h"
 #include <array>
+#include <atomic>
 #include <cassert>
 #include <cstddef>
 #include <iterator>
@@ -43,6 +44,11 @@ struct thread_local_cache
     {
         return current == object_count;
     }
+
+    void invalidate()
+    {
+        current = 0;
+    }
 };
 
 class slab
@@ -79,20 +85,103 @@ public:
 private:
     // compile-time size class configuration
     // <bytes class, number of blocks in class>
-    static constexpr std::pair<size_t, size_t> SIZE_CLASS_CONFIG[] = {
-        {   8, 512},
-        {  16, 512},
-        {  32, 256},
-        {  64, 256},
-        { 128, 128},
-        { 256, 128},
-        { 512,  64},
-        {1024,  64},
-        {2048,  32},
-        {4096,  32},
+    static constexpr std::array<std::pair<size_t, size_t>, 10> SIZE_CLASS_CONFIG = {
+        {std::make_pair(8, 512),
+         std::make_pair(16, 512),
+         std::make_pair(32, 256),
+         std::make_pair(64, 256),
+         std::make_pair(128, 128),
+         std::make_pair(256, 128),
+         std::make_pair(512, 64),
+         std::make_pair(1024, 64),
+         std::make_pair(2048, 32),
+         std::make_pair(4096, 32)}
+    };
+    static_assert(SIZE_CLASS_CONFIG.size() > 0, "Atleast one entry in SIZE_CLASS_CONFIG required.");
+
+    static constexpr size_t MAX_CACHED_SLABS = 4;
+    static constexpr size_t NUM_SIZE_CLASSES = std::size(SIZE_CLASS_CONFIG);
+
+    // this is an index. If it is set to 4, the size classes at index 0,1,2,3 will be cached.
+    static constexpr size_t NUM_CACHED_CLASSES = 4;
+    static_assert(NUM_CACHED_CLASSES <= NUM_SIZE_CLASSES,
+                  "The number of cached classes must be lower than the amount of size classes available. "
+                  "Either decrease the cached classes or increase total number of size classes.");
+
+    struct cache_entry
+    {
+        size_t epoch;
+        slab* owner;
+        std::array<thread_local_cache, slab::NUM_CACHED_CLASSES> storage;
+
+        void flush()
+        {
+            if (!owner)
+                return; // should we assert?
+
+            for (size_t i = 0; i < NUM_CACHED_CLASSES; i++)
+            {
+                // move pointers to appropriate pool from storage?
+                auto& cache = storage[i];
+                if (cache.is_empty())
+                    continue;
+
+                owner->shared_pools[i].free_batched_internal(cache.current, cache.objects.data());
+                cache.current = 0;
+            }
+        }
+
+        void invalidate_all()
+        {
+            if (!owner)
+                return;
+
+            for (size_t i = 0; i < NUM_CACHED_CLASSES; i++)
+                storage[i].invalidate();
+        }
     };
 
-    static constexpr size_t NUM_SIZE_CLASSES = std::size(SIZE_CLASS_CONFIG);
+    thread_local static std::array<cache_entry, MAX_CACHED_SLABS> caches;
+
+    cache_entry* get_cached_slab()
+    {
+        assert(MAX_CACHED_SLABS != 0 && "Cannot get cached slab. Number of cached slabs is 0");
+
+        size_t current = 0;
+        size_t empty_cache_entry_index = -1;
+        for (auto& cache : caches)
+        {
+            if (this == cache.owner)
+            {
+                // found a cache entry belonging to the thread
+                return &cache;
+            }
+            else if (cache.owner == nullptr)
+            {
+                // found empty entry
+                empty_cache_entry_index = current;
+            }
+
+            current++;
+        }
+
+        // none of the cache entries belong to this thread but we have an empty slot.
+        if (empty_cache_entry_index != (size_t)-1)
+        {
+            cache_entry& entry = caches[empty_cache_entry_index];
+            entry.owner = this;
+            entry.epoch = epoch.load(std::memory_order_acquire);
+            return &entry;
+        }
+
+        // none of the cache entries belong to this slab and all entries are full
+        // we need to evict the last entry
+        cache_entry& entry = caches[caches.max_size() - 1];
+        entry.flush();
+        entry.owner = this;
+        entry.epoch = epoch.load(std::memory_order_acquire);
+        return &entry;
+    }
 
     static constexpr size_t size_to_index(size_t size)
     {
@@ -113,31 +202,8 @@ private:
         return SIZE_CLASS_CONFIG[index].second;
     }
 
-    static constexpr thread_local_cache& index_to_cache(size_t index)
-    {
-        if (index == 0)
-        {
-            return cache_8B;
-        }
-        else if (index == 1)
-        {
-            return cache_16B;
-        }
-        else if (index == 2)
-        {
-            return cache_32B;
-        }
-        else
-        {
-            return cache_64B;
-        }
-    }
-
-    thread_local static thread_local_cache cache_8B;
-    thread_local static thread_local_cache cache_16B;
-    thread_local static thread_local_cache cache_32B;
-    thread_local static thread_local_cache cache_64B;
-
+    std::atomic<size_t> epoch;
     std::array<pool, NUM_SIZE_CLASSES> shared_pools;
 };
+
 } // namespace AL

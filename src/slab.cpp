@@ -1,5 +1,6 @@
 #include "slab.h"
 #include "pool.h"
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstring>
@@ -8,7 +9,10 @@
 
 namespace AL
 {
-slab::slab(double scale)
+// to satisfy the linker
+thread_local std::array<slab::cache_entry, slab::MAX_CACHED_SLABS> slab::caches = {};
+
+slab::slab(double scale) : epoch(0)
 {
     for (size_t i = 0; i < shared_pools.size(); i++)
     {
@@ -37,11 +41,19 @@ void* slab::alloc(size_t size)
 
     pool& pool = shared_pools[index];
 
-    if (index < 4)
+    if (index < NUM_CACHED_CLASSES)
     {
         // hot size classes
         // should batch
-        thread_local_cache& cache = index_to_cache(index);
+        auto cached_entry = get_cached_slab();
+        thread_local_cache& cache = cached_entry->storage[index];
+        size_t current_epoch = epoch.load(std::memory_order_acquire);
+        if (cached_entry->epoch != current_epoch)
+        {
+            cached_entry->invalidate_all();
+            cached_entry->epoch = current_epoch;
+        }
+
         if (auto elem = cache.try_pop())
         {
             // cache hit
@@ -82,6 +94,7 @@ void slab::reset()
     {
         pool.reset();
     }
+    epoch.fetch_add(1, std::memory_order_release);
 }
 
 void slab::free(void* ptr, size_t size)
@@ -98,11 +111,19 @@ void slab::free(void* ptr, size_t size)
     }
 
     pool& pool = shared_pools[index];
-    if (index < 4)
+    if (index < NUM_CACHED_CLASSES)
     {
         // hot size classes
         // should batch
-        thread_local_cache& cache = index_to_cache(index);
+        auto cached_entry = get_cached_slab();
+        thread_local_cache& cache = cached_entry->storage[index];
+        size_t current_epoch = epoch.load(std::memory_order_acquire);
+        if (cached_entry->epoch != current_epoch)
+        {
+            cached_entry->invalidate_all();
+            cached_entry->epoch = current_epoch;
+        }
+
         if (cache.is_full())
         {
             auto num = cache.object_count / 2;

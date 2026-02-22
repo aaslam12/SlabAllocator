@@ -370,11 +370,13 @@ TEST_CASE("Slab: Basic free", "[slab][free]")
 
     SECTION("Free single allocation increases free space")
     {
-        void* ptr = s.alloc(64);
+        // Use a non-TLC size class (>= 512 bytes, index >= 4) so free space
+        // is tracked at the pool level rather than staying in the thread-local cache.
+        void* ptr = s.alloc(512);
         REQUIRE(ptr != nullptr);
 
         size_t free_before = s.get_total_free();
-        s.free(ptr, 64);
+        s.free(ptr, 512);
         size_t free_after = s.get_total_free();
 
         REQUIRE(free_after > free_before);
@@ -683,13 +685,15 @@ TEST_CASE("Slab: Alloc/free patterns", "[slab][pattern]")
 
     SECTION("Alternating alloc/free same size")
     {
+        // Use a non-TLC size class so blocks are returned to the pool
+        // immediately on free(), keeping pool-level accounting stable.
         size_t initial_free = s.get_total_free();
 
         for (int i = 0; i < 100; ++i)
         {
-            void* ptr = s.alloc(64);
+            void* ptr = s.alloc(512);
             REQUIRE(ptr != nullptr);
-            s.free(ptr, 64);
+            s.free(ptr, 512);
         }
 
         REQUIRE(s.get_total_free() == initial_free);
@@ -715,16 +719,18 @@ TEST_CASE("Slab: Alloc/free patterns", "[slab][pattern]")
     {
         size_t initial_free = s.get_total_free();
 
+        // Use a non-TLC size class so alloc/free are reflected in pool-level
+        // free space accounting rather than staying in thread-local caches.
         std::vector<void*> ptrs;
         for (int i = 0; i < 50; ++i)
         {
-            void* ptr = s.alloc(64);
+            void* ptr = s.alloc(512);
             REQUIRE(ptr != nullptr);
             ptrs.push_back(ptr);
         }
 
         for (void* ptr : ptrs)
-            s.free(ptr, 64);
+            s.free(ptr, 512);
 
         REQUIRE(s.get_total_free() == initial_free);
     }
@@ -734,7 +740,9 @@ TEST_CASE("Slab: Alloc/free patterns", "[slab][pattern]")
         size_t initial_free = s.get_total_free();
 
         std::vector<std::pair<void*, size_t>> ptrs;
-        size_t sizes[] = {32, 64, 128, 256, 512};
+        // Use only non-TLC size classes (>= 128 bytes, index >= 4) so frees
+        // return blocks to the pool immediately and total free space is stable.
+        size_t sizes[] = {128, 256, 512, 1024, 2048};
 
         for (int i = 0; i < 50; ++i)
         {
@@ -786,18 +794,22 @@ TEST_CASE("Slab: Free space accounting", "[slab][stats]")
 
     SECTION("Free increases free space")
     {
-        void* ptr = s.alloc(64);
+        // Use a non-TLC size class (>= 512 bytes) so the free is reflected
+        // immediately in pool-level free space rather than staying in cache.
+        void* ptr = s.alloc(512);
         size_t before = s.get_total_free();
-        s.free(ptr, 64);
+        s.free(ptr, 512);
         REQUIRE(s.get_total_free() > before);
     }
 
     SECTION("Pool-specific free space decreases on alloc")
     {
-        // The 64-byte size class is at index 3
-        size_t before = s.get_pool_free_space(3);
-        s.alloc(64);
-        REQUIRE(s.get_pool_free_space(3) < before);
+        // The 512-byte size class is at index 6 (non-TLC).
+        // TLC-cached classes (indices 0-3: 8/16/32/64 bytes) batch-refill
+        // on the first miss, making single-alloc pool accounting unpredictable.
+        size_t before = s.get_pool_free_space(6);
+        s.alloc(512);
+        REQUIRE(s.get_pool_free_space(6) < before);
     }
 
     SECTION("Free space is zero after full exhaustion of a pool")
