@@ -276,11 +276,13 @@ size_t pool::get_block_count() const
 
 void pool::check_asserts() const
 {
+#if PALLOC_DEBUG
     assert(memory != nullptr && "Memory is nullptr. pool likely not initialized correctly.");
     assert(capacity != (size_t)-1 && "Capacity is invalid. pool likely not initialized correctly.");
     assert(free_count != (size_t)-1 && "Free count is invalid. pool likely not initialized correctly.");
     assert(block_size != (size_t)-1 && "Block size is invalid. pool likely not initialized correctly.");
     assert(block_count != (size_t)-1 && "Block count is invalid. pool likely not initialized correctly.");
+#endif
 }
 
 } // namespace AL

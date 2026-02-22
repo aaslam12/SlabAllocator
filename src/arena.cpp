@@ -87,7 +87,7 @@ void* arena::alloc(size_t length)
         if (length > (capacity - current))
             return nullptr;
 
-        if (used.compare_exchange_strong(current, current + length, std::memory_order_release, std::memory_order_acquire))
+        if (used.compare_exchange_weak(current, current + length, std::memory_order_relaxed, std::memory_order_relaxed))
             return memory + current;
     }
 }
