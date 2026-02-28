@@ -8,7 +8,7 @@ namespace AL
 {
 class slab;
 
-class pool
+class alignas(64) pool
 {
     struct free_node
     {
