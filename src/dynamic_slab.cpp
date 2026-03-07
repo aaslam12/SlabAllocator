@@ -1,16 +1,16 @@
 #include "dynamic_slab.h"
+#include "platform.h"
 #include <cstddef>
 #include <cstring>
 #include <memory>
-#include <sys/mman.h>
 
 namespace AL
 {
 
 dynamic_slab::slab_node* dynamic_slab::create_node(slab_node* next_ptr)
 {
-    void* mem = mmap(nullptr, sizeof(slab_node), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-    if (mem == MAP_FAILED)
+    void* mem = AL::platform_mem::alloc(sizeof(slab_node));
+    if (mem == nullptr)
         return nullptr;
 
     try
@@ -21,7 +21,7 @@ dynamic_slab::slab_node* dynamic_slab::create_node(slab_node* next_ptr)
     }
     catch (...)
     {
-        munmap(mem, sizeof(slab_node));
+        AL::platform_mem::free(mem, sizeof(slab_node));
         return nullptr;
     }
 }
@@ -43,7 +43,7 @@ dynamic_slab::~dynamic_slab()
     {
         slab_node* next = current->next;
         current->~slab_node();
-        munmap(current, sizeof(slab_node));
+        AL::platform_mem::free(current, sizeof(slab_node));
         current = next;
     }
 }

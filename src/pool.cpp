@@ -1,4 +1,5 @@
 #include "pool.h"
+#include "platform.h"
 #include <bit>
 #include <cassert>
 #include <cstddef>
@@ -7,8 +8,6 @@
 #include <iostream>
 #include <mutex>
 #include <new>
-#include <sys/mman.h>
-#include <unistd.h>
 
 namespace AL
 {
@@ -36,7 +35,7 @@ pool& pool::operator=(pool&& other) noexcept
 
     if (memory != nullptr)
     {
-        munmap(memory, capacity);
+        AL::platform_mem::free(memory, capacity);
     }
 
     memory = other.memory;
@@ -58,7 +57,7 @@ void pool::init(size_t block_size, size_t block_count)
     assert(this->block_size == (size_t)-1 && "pool likely already initialized correctly.");
     assert(this->block_count == (size_t)-1 && "pool likely already initialized correctly.");
 
-    int page_size = getpagesize();
+    size_t page_size = AL::platform_mem::page_size();
     if (block_size < sizeof(void*))
     {
 #if PALLOC_DEBUG
@@ -78,9 +77,9 @@ void pool::init(size_t block_size, size_t block_count)
     // currently, any pool we create, uses atleast one page of memory.
     // we can optimize this to allow a function to pass in the address where we should mmap
     // or just reuse an already existing mmap
-    void* ptr = mmap(NULL, capacity, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    void* ptr = AL::platform_mem::alloc(capacity);
 
-    if (ptr == MAP_FAILED)
+    if (ptr == nullptr)
     {
         throw std::bad_alloc();
     }
@@ -113,10 +112,10 @@ pool::~pool()
         return;
 
     // frees free list as well
-    int result = munmap(memory, capacity);
+    bool freed = AL::platform_mem::free(memory, capacity);
 
 #if PALLOC_DEBUG
-    if (result == -1)
+    if (!freed)
     {
         std::cerr << "WARNING: munmap failed in pool destructor\n";
     }

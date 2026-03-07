@@ -1,25 +1,24 @@
 #include "arena.h"
+#include "platform.h"
 #include <atomic>
 #include <cassert>
 #include <cstddef>
 #include <cstring>
 #include <iostream>
 #include <new>
-#include <sys/mman.h>
-#include <unistd.h>
 
 namespace AL
 {
 arena::arena(size_t bytes) : memory(nullptr), used(0), capacity(0)
 {
-    int page_size = getpagesize();
+    size_t page_size = AL::platform_mem::page_size();
 
     // round up to next page boundary
     capacity = ((bytes + page_size - 1) / page_size) * page_size;
 
-    void* ptr = mmap(nullptr, capacity, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    void* ptr = AL::platform_mem::alloc(capacity);
 
-    if (ptr == MAP_FAILED)
+    if (ptr == nullptr)
     {
         throw std::bad_alloc();
     }
@@ -33,11 +32,10 @@ arena::~arena()
     if (memory == nullptr)
         return;
 
-    int result = munmap(memory, capacity);
+    bool freed = AL::platform_mem::free(memory, capacity);
 
 #if PALLOC_DEBUG
-    // something went wrong.
-    if (result == -1)
+    if (!freed)
     {
         std::cerr << "WARNING: munmap failed in arena destructor\n";
     }
@@ -59,7 +57,7 @@ arena& arena::operator=(arena&& other) noexcept
 
     if (memory != nullptr)
     {
-        munmap(memory, capacity);
+        AL::platform_mem::free(memory, capacity);
     }
 
     memory = other.memory;
@@ -120,11 +118,11 @@ int arena::clear()
 {
     if (memory != nullptr)
     {
-        int result = munmap(memory, capacity);
+        bool ok = AL::platform_mem::free(memory, capacity);
         memory = nullptr;
 
-        if (result != 0)
-            return result;
+        if (!ok)
+            return -1;
     }
 
     used.store(0);
